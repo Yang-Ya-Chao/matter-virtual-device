@@ -5,19 +5,51 @@ on:
 
 jobs:
   build:
-    name: Build
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/project-chip/chip-build-android:194
-      volumes:
-        - "/tmp/log_output:/tmp/test_logs"
+    name: Build (arm)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        run: |
+          ANDROID_HOME=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline.zip
+          unzip -q /tmp/cmdline.zip -d $ANDROID_HOME/cmdline-tools/
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+            "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358" > /dev/null 2>&1
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> $GITHUB_ENV
+
+      - name: Set up Kotlin
+        run: |
+          curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.1.10/kotlin-compiler-2.1.10.zip -o /tmp/kotlin.zip
+          sudo unzip -q /tmp/kotlin.zip -d /usr/local/lib/
+          echo "/usr/local/lib/kotlinc/bin" >> $GITHUB_PATH
 
       - name: Bootstrap
         run: |
@@ -25,8 +57,7 @@ jobs:
 
       - name: Build virtual-device-app (arm)
         run: |
-          ./scripts/run_in_build_env.sh \
-            "./scripts/build/build_examples.py --target android-arm-virtual-device-app build"
+          ./scripts/build/build_examples.py --target android-arm-virtual-device-app build
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -34,8 +65,9 @@ jobs:
           name: virtual-device-app-arm-apk
           path: out/android-arm-virtual-device-app/VirtualDeviceApp/app/outputs/apk/debug/app-debug.apk
 
-      - name: Upload native libs
+      - name: Upload native libs (arm64)
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: virtual-device-app-arm-libs
           path: |
