@@ -1,20 +1,14 @@
-name: Build Virtual Device App for Android
+name: "Build Virtual Device APK"
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build (arm)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune -af || true
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -55,22 +49,12 @@ jobs:
         run: |
           source scripts/bootstrap.sh -p android
 
-      - name: Build virtual-device-app (arm)
+      - name: Build
         run: |
           ./scripts/build/build_examples.py --target android-arm-virtual-device-app build
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: virtual-device-app-arm-apk
+          name: virtual-device-app-apk
           path: out/android-arm-virtual-device-app/VirtualDeviceApp/app/outputs/apk/debug/app-debug.apk
-
-      - name: Upload native libs (arm64)
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: virtual-device-app-arm-libs
-          path: |
-            out/android-arm-virtual-device-app/lib/jni/armeabi-v7a/*.so
-            out/android-arm-virtual-device-app/lib/*.jar
-          if-no-files-found: warn
