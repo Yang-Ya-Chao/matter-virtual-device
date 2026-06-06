@@ -3,7 +3,7 @@ name: Build Virtual Device App for Android
 on:
   workflow_dispatch:
   push:
-    branches: [master, main]
+    branches: [master]
     paths:
       - '.github/workflows/build-virtual-device.yaml'
 
@@ -11,23 +11,55 @@ jobs:
   build-android-arm64:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    container:
-      image: ghcr.io/project-chip/chip-build-android:latest
 
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker image prune -af || true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
 
-      - name: Build virtual-device-app (arm64)
-        env:
-          ANDROID_HOME: /opt/android/sdk
-          ANDROID_NDK_HOME: /opt/android/sdk/ndk/28.2.13676358
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
         run: |
-          yes | /opt/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          source scripts/bootstrap.sh
+          export ANDROID_HOME=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          curl -sL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline.zip
+          unzip -q /tmp/cmdline.zip -d $ANDROID_HOME/cmdline-tools/
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+            "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358" > /dev/null 2>&1
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> $GITHUB_ENV
+
+      - name: Set up Kotlin 2.1.10
+        run: |
+          curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.1.10/kotlin-compiler-2.1.10.zip -o /tmp/kotlin.zip
+          sudo unzip -q /tmp/kotlin.zip -d /usr/local/lib/
+          echo "/usr/local/lib/kotlinc/bin" >> $GITHUB_PATH
+
+      - name: Bootstrap
+        run: |
+          source scripts/bootstrap.sh -p android
+
+      - name: Build virtual-device-app (arm64)
+        run: |
           ./scripts/build/build_examples.py --target android-arm64-virtual-device-app build
 
       - name: Upload APK
